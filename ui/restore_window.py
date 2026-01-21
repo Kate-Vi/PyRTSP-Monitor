@@ -172,26 +172,25 @@ class RestoreWindow(QWidget):
             QMessageBox.warning(self, "Помилка", "Така пошта не знайдена в системі.")
             return
 
-        self.user_email = email
-        # Генерація коду через BLL (може бути відправка на email або вивід в консоль)
-        self.generated_code = self.auth_service.generate_recovery_code(email)
-        
-        QMessageBox.information(self, "Увага", f"Код надіслано на {email}.")
-        
-        # Перемикаємо стек на сторінку індексу 1 (Введення коду)
-        self.stack.setCurrentIndex(1)
+        if self.auth_service.generate_recovery_code(email):
+            self.user_email = email # Запам'ятовуємо email
+            
+            QMessageBox.information(self, "Увага", f"Код надіслано на {email}.")
+            self.stack.setCurrentIndex(1) 
+        else:
+            QMessageBox.warning(self, "Помилка", "Користувача не знайдено або помилка відправки.")
 
     def action_verify_code(self):
         """
         Обробник Кроку 2.
-        Звіряє введений код із згенерованим. Якщо вірно - переходить до Кроку 3.
+        Звіряє введений код через AuthService (БД).
         """
-        code = self.inp_code.text().strip()
-        if code == self.generated_code:
-            # Код співпав, переходимо до зміни пароля (індекс 2)
+        code = self.inp_code.text().strip() 
+        
+        if self.auth_service.verify_recovery_code(self.user_email, code):
             self.stack.setCurrentIndex(2)
         else:
-            QMessageBox.critical(self, "Помилка", "Невірний код!")
+            QMessageBox.critical(self, "Помилка", "Невірний код або його термін вийшов!")
 
     def action_change_password(self):
         """

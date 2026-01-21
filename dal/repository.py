@@ -26,9 +26,16 @@ class CameraRepository:
             cameras.append(Camera(**doc))
         return cameras
 
-    def delete(self, camera_id: str):
-        """Видаляє камеру за ID"""
-        try:
-            self.collection.delete_one({"_id": ObjectId(camera_id)})
-        except Exception as e:
-            print(f"Error deleting camera: {e}")
+    # dal/repository.py
+def delete(self, camera_id):
+    """Видалення камери - має бути швидким"""
+    try:
+        # SQLite операція
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM cameras WHERE id = ?", (camera_id,))
+            conn.commit()
+        return True
+    except Exception as e:
+        print(f"Database delete error: {e}")
+        raise e

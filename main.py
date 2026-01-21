@@ -1,33 +1,47 @@
 import sys
+import gi
+
+# Налаштування GStreamer для MacOS (важливо для відео!)
+try:
+    gi.require_version('Gst', '1.0')
+    from gi.repository import Gst
+    Gst.init(None)
+except ValueError:
+    print("⚠️ GStreamer не знайдено або версія неправильна")
+except Exception as e:
+    print(f"⚠️ Помилка ініціалізації GStreamer: {e}")
+
 from PyQt6.QtWidgets import QApplication
 from ui.login_window import LoginWindow
+from ui.main_window import MainWindow  # <--- Ми додали імпорт головного вікна
 
 def main():
-    # 1. Створюємо об'єкт додатку (обов'язково для PyQt)
     app = QApplication(sys.argv)
 
-    # 2. Створюємо вікно логіну
+    # Змінна, щоб вікно не зникло (Python видаляє об'єкти без посилань)
+    main_window = None 
+
     login_window = LoginWindow()
     
-    # 3. Визначаємо функцію, яка спрацює, коли користувач успішно зайде
     def on_login_success(username):
+        nonlocal main_window 
         print(f"✅ КОРИСТУВАЧ {username} УСПІШНО УВІЙШОВ!")
-        print("Тут ми пізніше відкриємо головне вікно з камерами.")
         
-        # Закриваємо вікно логіну
+        # 1. Закриваємо вікно входу
         login_window.close()
         
-        # TODO: На наступному етапі тут буде:
-        # main_window = MainWindow(username)
-        # main_window.show()
+        # 2. Створюємо і показуємо Головне вікно
+        try:
+            main_window = MainWindow(username)
+            main_window.show()
+        except Exception as e:
+            print(f"❌ Помилка при відкритті головного вікна: {e}")
 
-    # Підписуємося на сигнал (аналог += event в C#)
+    # Зв'язуємо сигнал успішного входу з нашою функцією
     login_window.login_successful.connect(on_login_success)
-
-    # 4. Показуємо вікно
+    
     login_window.show()
 
-    # 5. Запускаємо цикл обробки подій
     sys.exit(app.exec())
 
 if __name__ == "__main__":

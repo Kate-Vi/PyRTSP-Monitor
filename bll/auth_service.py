@@ -1,8 +1,13 @@
 import bcrypt
 import re
-import random
+import secrets # Для генерації безпечних токенів
+from datetime import datetime, timedelta
+from bll.email_service import EmailService # Імпорт сервісу для відправки листів
 from dal.models import User
 from dal.user_repository import UserRepository
+from dal.recovery_repository import RecoveryCodeRepository
+
+
 
 class AuthService:
     """
@@ -18,7 +23,7 @@ class AuthService:
     def __init__(self):
         """Ініціалізація сервісу та підключення до репозиторію користувачів."""
         self.repo = UserRepository()
-
+        self.recovery_repo = RecoveryCodeRepository()
     def register(self, username, plain_password, email, first_name, last_name):
         """
         Реєстрація нового користувача.
@@ -112,7 +117,7 @@ class AuthService:
         
         Примітка:
             У поточній версії емулює відправку листа через вивід у консоль.
-            Для реальної відправки тут має бути інтеграція з SMTP.
+            Для відправки використовується google app.
 
         Args:
             email (str): Пошта отримувача.
@@ -120,9 +125,46 @@ class AuthService:
         Returns:
             str: Згенерований код (наприклад, "1234").
         """
-        code = str(random.randint(1000, 9999))
-        print(f"\n[EMAIL SERVICE] 📨 Лист на {email}: Ваш код відновлення -> {code}\n")
-        return code
+        # Перевірка чи існує юзер
+        if not self.check_email_exists(email):
+            # Щоб не видавати чи є пошта в базі (Enumeration Attack), 
+            # можна просто повернути True, але нічого не слати.
+            # Але для курсової кидаємо помилку або False.
+            return False
+        otp_code = str(secrets.randbelow(1000000)).zfill(6) # генеруємо 6-значний код за допомогою secrets, більш безпечно ніж random
+        # Просто зберігаємо. Час життя (5 хв) задано в індексі репозиторію.
+        self.recovery_repo.save_code(email, otp_code)
+        print(f"\n[EMAIL SERVICE] mail for {email}: otp code -> {otp_code}\n")
+        mailer = EmailService()
+    
+        html_body = f"""
+        <div style="font-family: Arial; padding: 20px; border: 1px solid #ddd;">
+            <h2>Вітаємо!</h2>
+            <p>Ваш код підтвердження:</p>
+            <h1 style="color: #2d89ef;">{otp_code}</h1>
+            <small>Нікому не повідомляйте цей код.</small>
+        </div>
+        """
+        
+        mailer.send_email_background(email, "Ваш код доступу", html_body)
+        
+        return "Ми відправили код, перевірте пошту!"
+
+    def verify_recovery_code(self, email: str, input_code: str) -> bool:
+        # Отримуємо об'єкт (Pydantic модель)
+        recovery_model = self.recovery_repo.get_code(email)
+        
+        # Якщо None - значить код або не створювали, або він вже зник (час вийшов)
+        if not recovery_model:
+            return False
+
+        # Безпечне порівняння рядків
+        if not secrets.compare_digest(recovery_model.code, input_code):
+            return False
+
+        # Видаляємо код, щоб не використали повторно
+        self.recovery_repo.delete_code(email)
+        return True
 
     def change_password(self, email: str, new_plain_password: str):
         """
