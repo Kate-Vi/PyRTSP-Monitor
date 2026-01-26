@@ -1,29 +1,33 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QLabel, QLineEdit, 
                              QPushButton, QHBoxLayout, QMessageBox)
-from PyQt6.QtCore import Qt, QTimer, QRunnable, QThreadPool
+from PyQt6.QtCore import Qt, QTimer, QRunnable, QThreadPool, QObject, pyqtSignal
 from dal.repository import CameraRepository
 from dal.models import Camera
+
+
+class WorkerSignals(QObject):
+    """
+    QRunnable не може мати сигналів, тому ми створюємо для них окремий клас-обгортку.
+    """
+    finished = pyqtSignal(object)
+    error = pyqtSignal(str)
 
 class DatabaseWorker(QRunnable):
     """Асинхронний робітник для операцій з БД"""
     
-    def __init__(self, func, callback=None, error_callback=None, *args, **kwargs):
+    def __init__(self, func, *args, **kwargs):
         super().__init__()
         self.func = func
         self.args = args
         self.kwargs = kwargs
-        self.callback = callback
-        self.error_callback = error_callback
+        self.signals = WorkerSignals()
     
     def run(self):
         try:
             result = self.func(*self.args, **self.kwargs)
-            if self.callback:
-                self.callback(result)
+            self.signals.finished.emit(result)
         except Exception as e:
-            if self.error_callback:
-                self.error_callback(e)
-
+            self.signals.error.emit(str(e))
 class AddCameraDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -89,20 +93,28 @@ class AddCameraDialog(QDialog):
 
         self.setEnabled(False)
         
-        new_cam = Camera(name=name, rtsp_url=rtsp)
+        try:
+            new_cam = Camera(name=name, rtsp_url=rtsp)
+        except Exception as e:
+            QMessageBox.critical(self, "Валідація", str(e))
+            self.setEnabled(True)
+            return
+        self._start_worker(new_cam)
         
-        QTimer.singleShot(10, lambda: self._save_camera_async(new_cam))
 
-    def _save_camera_async(self, new_cam):
-        """Асинхронне збереження камери"""
-        worker = DatabaseWorker(
-            func=self.repo.add,
-            args=(new_cam,),
-            callback=self._on_camera_added,
-            error_callback=self._on_camera_add_error
-        )
-        
-        QThreadPool.globalInstance().start(worker)
+    def _start_worker(self, new_cam):
+            # 1. Створюємо воркера.
+            # УВАГА: new_cam передається просто як другий аргумент. 
+            # Він потрапить у *args воркера. Ніяких args=(...)
+            worker = DatabaseWorker(self.repo.add, new_cam)
+            
+            # 2. Підключаємо слоти (вони виконаються в Main Thread)
+            worker.signals.finished.connect(self._on_camera_added)
+            worker.signals.error.connect(self._on_camera_add_error)
+            
+            # 3. Стартуємо
+            QThreadPool.globalInstance().start(worker)
+
 
     def _on_camera_added(self, result):
         """Успішне додавання камери"""

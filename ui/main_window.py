@@ -2,7 +2,7 @@ import sys
 import gi
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
                              QLabel, QPushButton, QFrame, QScrollArea, QMessageBox)
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QRunnable, QThreadPool
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QRunnable, QThreadPool, QObject
 from PyQt6.QtGui import QImage, QPixmap
 
 # --- GStreamer Check ---
@@ -20,6 +20,14 @@ from ui.add_camera_dialog import AddCameraDialog
 # ==========================================
 # 1. DATABASE WORKER
 # ==========================================
+
+#NEW
+
+class WorkerSignals(QObject):
+    """Окремий клас для сигналів, бо QRunnable не вміє їх емітувати"""
+    finished = pyqtSignal(object)
+    error = pyqtSignal(str)
+
 class DatabaseWorker(QRunnable):
     finished = pyqtSignal(object)
     error = pyqtSignal(str)
@@ -29,15 +37,13 @@ class DatabaseWorker(QRunnable):
         self.func = func
         self.args = args
         self.kwargs = kwargs
-    
+        self.signals = WorkerSignals() # Ініціалізуємо сигнали
     def run(self):
         try:
             result = self.func(*self.args, **self.kwargs)
-            # В QRunnable немає сигналів напряму, але це спрощена схема
-            # Для повноцінної роботи треба QObject, але поки залишимо так для сумісності
-            pass 
-        except Exception:
-            pass
+            self.signals.finished.emit(result)
+        except Exception as e:
+            self.signals.error.emit(str(e))
 
 # ==========================================
 # 2. ВІДЕО ПОТІК
@@ -253,34 +259,59 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(10, self._load_cameras_impl)
 
     def _load_cameras_impl(self):
+        # 1. Отримуємо свіжий список з БД
+        db_cameras = self.repo.get_all()
+        
+        # 2. Складаємо список ID камер, які вже є на екрані
+        existing_ids = set()
         for w in self.widgets:
-            w.stop()
-            w.setParent(None)
-        self.widgets.clear()
+            existing_ids.add(str(w.camera.id))
         
-        # Чистимо старі елементи
-        while self.video_grid.count():
-            item = self.video_grid.takeAt(0)
-            if item.widget(): item.widget().deleteLater()
-
-        cameras = self.repo.get_all()
-        if not cameras: return
-
-        # Логіка сітки: максимум 2 в ряд
-        row, col = 0, 0
-        max_cols = 2 
+        # 3. Знаходимо та створюємо ТІЛЬКИ нові віджети
+        new_widgets_count = 0
+        for cam in db_cameras:
+            if str(cam.id) not in existing_ids:
+                # Створюємо віджет
+                wid = VideoFeedWidget(cam)
+                wid.delete_requested.connect(self.handle_delete_camera)
+                wid.start() # Запускаємо потік
+                
+                # Додаємо у внутрішній список пам'яті
+                self.widgets.append(wid)
+                new_widgets_count += 1
         
-        for cam in cameras:
-            wid = VideoFeedWidget(cam)
-            wid.delete_requested.connect(self.handle_delete_camera)
-            self.video_grid.addWidget(wid, row, col)
-            wid.start()
-            self.widgets.append(wid)
+        if new_widgets_count == 0 and len(db_cameras) == len(self.widgets):
+            # Якщо нічого не змінилося - виходимо, щоб не смикати сітку
+            return
+
+        # 4. ПЕРЕРАХУНОК ПОЗИЦІЙ (Re-Layout)
+        # Ми беремо ВСІ віджети і заново кажемо сітці, де вони мають стояти.
+        # Qt досить розумний: якщо віджет вже там, він не буде мигати.
+        
+        max_cols = 2  # <--- 2 камери в ряд
+        
+        for index, wid in enumerate(self.widgets):
+            row = index // max_cols
+            col = index % max_cols
             
-            col += 1
-            if col >= max_cols:
-                col = 0
-                row += 1
+            # Ця команда перемістить віджет, якщо він був не на своєму місці,
+            # або залишить як є, якщо місце правильне.
+            self.video_grid.addWidget(wid, row, col)
+            
+        print(f"Оновлено сітку: {len(self.widgets)} камер. Додано нових: {new_widgets_count}")
+
+    def _reflow_grid(self):
+        """Перераховує позиції всіх камер у сітці, щоб прибрати дирки."""
+        max_cols = 2
+        
+        # Ми просто проходимось по списку, який у нас залишився
+        for index, widget in enumerate(self.widgets):
+            row = index // max_cols
+            col = index % max_cols
+            
+            # Ця магія Qt: якщо віджет вже є в лейауті, 
+            # addWidget автоматично перемістить його в нову клітинку.
+            self.video_grid.addWidget(widget, row, col)
 
     def handle_delete_camera(self, camera):
         reply = QMessageBox.question(
@@ -288,20 +319,32 @@ class MainWindow(QMainWindow):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
+        
         if reply == QMessageBox.StandardButton.Yes:
-            # Видаляємо візуально
+            # 1. Знаходимо віджет у списку
+            widget_to_remove = None
             for w in self.widgets:
                 if w.camera.id == camera.id:
-                    w.stop()
-                    w.setParent(None)
-                    self.widgets.remove(w)
-                    self.video_grid.removeWidget(w)
+                    widget_to_remove = w
                     break
             
-            # Видаляємо з бази у фоні
-            thread = QThread()
-            # (Тут спрощено, у реальному коді краще повноцінний worker, але так теж не заблокує)
-            self.repo.delete(camera.id)
+            if widget_to_remove:
+                # 2. Зупиняємо і прибираємо з UI
+                widget_to_remove.stop()
+                self.video_grid.removeWidget(widget_to_remove)
+                widget_to_remove.setParent(None)
+                widget_to_remove.deleteLater() # Плануємо знищення об'єкта
+                
+                # 3. Видаляємо зі списку пам'яті
+                self.widgets.remove(widget_to_remove)
+                
+                # 4. ДЕФРАГМЕНТАЦІЯ (Зсуваємо решту камер)
+                self._reflow_grid()
+            
+            # 5. Видаляємо з БД (асинхронно)
+            worker = DatabaseWorker(self.repo.delete, camera.id)
+            worker.signals.error.connect(lambda e: print(f"Delete Error: {e}"))
+            QThreadPool.globalInstance().start(worker)
 
     def open_add_dialog(self):
         d = AddCameraDialog(self)

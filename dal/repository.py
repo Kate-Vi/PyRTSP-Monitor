@@ -25,17 +25,13 @@ class CameraRepository:
             doc["_id"] = str(doc["_id"])
             cameras.append(Camera(**doc))
         return cameras
-
+    #Використовувався sqllite, а не mongodb через, що були конфллікти
     # dal/repository.py
-def delete(self, camera_id):
-    """Видалення камери - має бути швидким"""
-    try:
-        # SQLite операція
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM cameras WHERE id = ?", (camera_id,))
-            conn.commit()
-        return True
-    except Exception as e:
-        print(f"Database delete error: {e}")
-        raise e
+    def delete(self, camera_id: str):
+        """Видалення для MongoDB"""
+        try:
+            # Перетворюємо рядок ID назад у об'єкт MongoDB
+            self.collection.delete_one({"_id": ObjectId(camera_id)})
+        except Exception as e:
+            print(f"Mongo delete error: {e}")
+            raise e
