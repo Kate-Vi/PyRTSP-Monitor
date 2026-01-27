@@ -28,6 +28,7 @@ class DatabaseWorker(QRunnable):
             self.signals.finished.emit(result)
         except Exception as e:
             self.signals.error.emit(str(e))
+
 class AddCameraDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -91,6 +92,12 @@ class AddCameraDialog(QDialog):
             QMessageBox.warning(self, "Помилка", "Будь ласка, заповніть всі поля!")
             return
 
+        # 👇 ПЕРЕВІРКА НА ДУБЛІКАТИ
+        # Перевіряємо синхронно, бо читання одного запису дуже швидке
+        if self.repo.get_by_name(name):
+            QMessageBox.warning(self, "Дублікат", f"Камера з назвою '{name}' вже існує!\nОберіть іншу назву.")
+            return
+
         self.setEnabled(False)
         
         try:
@@ -99,13 +106,11 @@ class AddCameraDialog(QDialog):
             QMessageBox.critical(self, "Валідація", str(e))
             self.setEnabled(True)
             return
+            
         self._start_worker(new_cam)
-        
 
     def _start_worker(self, new_cam):
             # 1. Створюємо воркера.
-            # УВАГА: new_cam передається просто як другий аргумент. 
-            # Він потрапить у *args воркера. Ніяких args=(...)
             worker = DatabaseWorker(self.repo.add, new_cam)
             
             # 2. Підключаємо слоти (вони виконаються в Main Thread)
@@ -114,7 +119,6 @@ class AddCameraDialog(QDialog):
             
             # 3. Стартуємо
             QThreadPool.globalInstance().start(worker)
-
 
     def _on_camera_added(self, result):
         """Успішне додавання камери"""

@@ -20,24 +20,18 @@ from ui.add_camera_dialog import AddCameraDialog
 # ==========================================
 # 1. DATABASE WORKER
 # ==========================================
-
-#NEW
-
 class WorkerSignals(QObject):
-    """Окремий клас для сигналів, бо QRunnable не вміє їх емітувати"""
     finished = pyqtSignal(object)
     error = pyqtSignal(str)
 
 class DatabaseWorker(QRunnable):
-    finished = pyqtSignal(object)
-    error = pyqtSignal(str)
-    
     def __init__(self, func, *args, **kwargs):
         super().__init__()
         self.func = func
         self.args = args
         self.kwargs = kwargs
-        self.signals = WorkerSignals() # Ініціалізуємо сигнали
+        self.signals = WorkerSignals()
+    
     def run(self):
         try:
             result = self.func(*self.args, **self.kwargs)
@@ -68,7 +62,6 @@ class VideoThread(QThread):
             
             bus = self.pipeline.get_bus()
             while self.is_running:
-                # Читаємо повідомлення з таймаутом, щоб не зависати
                 msg = bus.timed_pop(100 * Gst.MSECOND)
                 if msg:
                     if msg.type == Gst.MessageType.ERROR or msg.type == Gst.MessageType.EOS:
@@ -94,7 +87,7 @@ class VideoThread(QThread):
 
     def stop(self):
         self.is_running = False
-        self.wait(500) # Чекаємо максимум 0.5с
+        self.wait(500)
         if self.isRunning():
             self.terminate()
 
@@ -108,49 +101,79 @@ class VideoFeedWidget(QFrame):
         super().__init__(parent)
         self.camera = camera
         self.thread = None
-        self.setProperty("class", "videoCard")
         
-        # 👇 ФІКС РОЗМІРУ: Фіксуємо розмір картки, щоб вона не розтягувалась
+        # Стиль картки (рамка)
         self.setFixedSize(480, 320)
+        self.setStyleSheet("""
+            QFrame {
+                background-color: #000; 
+                border-radius: 12px;
+                border: 1px solid #333;
+            }
+        """)
         
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0,0,0,0)
         
+        # Відео лейбл
         self.video_label = QLabel()
         self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.video_label.setStyleSheet("border-radius: 4px; background-color: #050505;")
+        self.video_label.setStyleSheet("border-radius: 12px; background-color: #050505;")
         self.video_label.setScaledContents(True)
         
-        # Overlay
+        # --- OVERLAY (ШАР ПОВЕРХ ВІДЕО) ---
         overlay_container = QWidget(self.video_label)
+        
+        # Прозорий фон для контейнера, щоб не було чорної смуги
+        overlay_container.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        overlay_container.setStyleSheet("background: transparent;")
+        
         overlay_layout = QHBoxLayout(overlay_container)
-        overlay_layout.setContentsMargins(0, 10, 10, 0)
+        overlay_layout.setContentsMargins(0, 15, 15, 0)
         overlay_layout.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
         
-        # Бейджі
+        # --- ПЛАШКА З КНОПКАМИ ---
         badges_container = QFrame()
         badges_container.setStyleSheet("background-color: rgba(0, 0, 0, 0.7); border-radius: 4px;")
+        
         badges_layout = QHBoxLayout(badges_container)
-        badges_layout.setContentsMargins(5, 5, 5, 5)
-        badges_layout.setSpacing(10)
+        badges_layout.setContentsMargins(8, 4, 8, 4)
+        badges_layout.setSpacing(12)
         
+        # Назва
         name_lbl = QLabel(f"{self.camera.name}")
-        name_lbl.setStyleSheet("color: white; font-weight: bold; font-family: Arial; border: none; background: transparent;")
+        name_lbl.setStyleSheet("color: #FFFFFF; font-weight: bold; font-family: Arial; font-size: 13px; background: transparent; border: none;")
         
-        self.live_lbl = QLabel("LIVE")
-        self.live_lbl.setStyleSheet("color: white; background-color: #DA3633; font-weight: bold; font-size: 11px; padding: 2px 6px; border-radius: 2px;")
+        # LIVE
+        live_lbl = QLabel("● LIVE")
+        live_lbl.setStyleSheet("color: #FF5555; font-weight: bold; font-size: 11px; background: transparent; border: none;")
         
-        btn_del = QPushButton("X")
+        # Розділювач
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.VLine)
+        line.setStyleSheet("background-color: rgba(255,255,255,0.3); border: none;")
+        line.setFixedWidth(1)
+        line.setFixedHeight(12)
+
+        # Кнопка Видалити (ВИПРАВЛЕНО: прибрано transform)
+        btn_del = QPushButton("✕")
         btn_del.setFixedSize(20, 20)
         btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_del.setStyleSheet("QPushButton { color: #8B949E; border: none; background: transparent; font-weight: bold; } QPushButton:hover { color: #F85149; }")
+        btn_del.setStyleSheet("""
+            QPushButton { color: #DDD; border: none; background: transparent; font-weight: bold; font-size: 14px; } 
+            QPushButton:hover { color: #FF5555; }
+        """)
         btn_del.clicked.connect(self.on_delete_click)
 
+        # Збираємо плашку
         badges_layout.addWidget(name_lbl)
-        badges_layout.addWidget(self.live_lbl)
+        badges_layout.addWidget(live_lbl)
+        badges_layout.addWidget(line)
         badges_layout.addWidget(btn_del)
         
+        # Додаємо плашку на прозорий шар
         overlay_layout.addWidget(badges_container)
+        
         layout.addWidget(self.video_label)
 
     def on_delete_click(self):
@@ -164,8 +187,8 @@ class VideoFeedWidget(QFrame):
 
     def update_img(self, img):
         self.video_label.setPixmap(QPixmap.fromImage(img))
+        # Оновлюємо геометрію оверлею
         if self.video_label.children():
-            # Оновлюємо ширину оверлею під ширину віджета
             self.video_label.children()[0].setGeometry(0, 0, self.width(), 60)
 
     def stop(self):
@@ -186,17 +209,41 @@ class MainWindow(QMainWindow):
         self.load_cameras()
 
     def init_ui(self):
-        self.setWindowTitle("PyRTSP Monitor")
-        self.resize(1200, 750)
+        self.setWindowTitle("PyRTSP Monitor Pro")
+        self.resize(1280, 800)
+        
         self.setStyleSheet("""
-            QMainWindow { background-color: #0F1115; }
-            QFrame#sidebar { background-color: #161B22; border-right: 1px solid #21262D; min-width: 200px; max-width: 200px; }
-            QPushButton.menuBtn { text-align: left; padding: 12px 20px; color: #8B949E; border: none; border-radius: 6px; margin: 4px 10px; font-size: 14px; font-family: Arial; }
-            QPushButton.menuBtn:hover { color: white; background-color: #21262D; }
-            QPushButton.menuBtn[active="true"] { background-color: #238636; color: white; font-weight: bold; }
-            QFrame#contentPanel { background-color: #0D1117; border-top: none; }
-            QLabel#sectionHeader { color: white; font-size: 18px; font-weight: bold; }
-            QFrame.videoCard { background-color: #000; border-radius: 4px; border: 1px solid #30363D; }
+            QMainWindow { background-color: #121215; }
+            
+            QFrame#sidebar { 
+                background-color: #1E1E24; 
+                border-right: 1px solid #2A2A35; 
+                min-width: 220px; 
+                max-width: 220px; 
+            }
+            
+            QPushButton.menuBtn { 
+                text-align: left; 
+                padding: 14px 24px; 
+                color: #A0A0B0; 
+                border: none; 
+                border-radius: 8px; 
+                margin: 6px 12px; 
+                font-size: 14px; 
+                font-family: Arial;
+                font-weight: 500;
+            }
+            QPushButton.menuBtn:hover { background-color: #2A2A35; color: white; }
+            QPushButton.menuBtn[active="true"] { background-color: #6C5CE7; color: white; font-weight: bold; }
+            
+            QFrame#contentPanel { background-color: transparent; border: none; }
+            QLabel#sectionHeader { color: #FFFFFF; font-size: 22px; font-weight: 600; font-family: Arial; }
+            
+            QScrollBar:vertical {
+                border: none; background: #121215; width: 8px; margin: 0px;
+            }
+            QScrollBar::handle:vertical { background: #333; min-height: 20px; border-radius: 4px; }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
         """)
 
         main_widget = QWidget()
@@ -209,141 +256,114 @@ class MainWindow(QMainWindow):
         sidebar = QFrame()
         sidebar.setObjectName("sidebar")
         sb_layout = QVBoxLayout(sidebar)
-        sb_layout.setContentsMargins(10, 20, 10, 20)
+        sb_layout.setContentsMargins(0, 30, 0, 30)
+        
+        lbl_logo = QLabel("PyRTSP\nMonitor")
+        lbl_logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_logo.setStyleSheet("color: white; font-size: 18px; font-weight: bold; margin-bottom: 20px;")
+        sb_layout.addWidget(lbl_logo)
         
         btn_cams = QPushButton("Камери")
         btn_cams.setProperty("class", "menuBtn")
         btn_cams.setProperty("active", True)
         sb_layout.addWidget(btn_cams)
+        
         sb_layout.addStretch()
+        
+        user_lbl = QLabel(f"👤 {self.username}")
+        user_lbl.setStyleSheet("color: #666; font-size: 12px; margin-left: 24px; margin-bottom: 5px;")
+        sb_layout.addWidget(user_lbl)
+
         btn_exit = QPushButton("Вихід")
         btn_exit.setProperty("class", "menuBtn")
         btn_exit.clicked.connect(self.close)
         sb_layout.addWidget(btn_exit)
+        
         main_layout.addWidget(sidebar)
 
         # Content
         content_frame = QFrame()
         content_frame.setObjectName("contentPanel")
         cf_layout = QVBoxLayout(content_frame)
-        cf_layout.setContentsMargins(30, 30, 30, 30)
+        cf_layout.setContentsMargins(40, 40, 40, 0)
         
         top_row = QHBoxLayout()
-        top_row.addWidget(QLabel("Камери", objectName="sectionHeader"))
+        top_row.addWidget(QLabel("Активні Трансляції", objectName="sectionHeader"))
         top_row.addStretch()
-        btn_add = QPushButton("+")
-        btn_add.setStyleSheet("background: transparent; color: #C9D1D9; font-size: 28px; border: none; font-weight: light;")
+        
+        btn_add = QPushButton("+ Додати камеру")
+        btn_add.setStyleSheet("""
+            QPushButton {
+                background-color: #2D2D3A; color: white; font-size: 14px; 
+                padding: 10px 20px; border-radius: 8px; border: 1px solid #3D3D4A; font-weight: 600;
+            }
+            QPushButton:hover { background-color: #3D3D4A; border-color: #555; }
+        """)
         btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_add.clicked.connect(self.open_add_dialog)
         top_row.addWidget(btn_add)
+        
         cf_layout.addLayout(top_row)
+        cf_layout.addSpacing(20)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setStyleSheet("background: transparent; border: none;")
+        
         self.grid_widget = QWidget()
         self.grid_widget.setStyleSheet("background: transparent;")
         
-        # 👇 ГОЛОВНА ЗМІНА ДЛЯ ДИЗАЙНУ:
         self.video_grid = QGridLayout(self.grid_widget)
-        self.video_grid.setSpacing(20)
-        # Притискаємо елементи ВЛІВО і ВГОРУ (щоб не розповзалися)
+        self.video_grid.setSpacing(24)
         self.video_grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         
         scroll.setWidget(self.grid_widget)
         cf_layout.addWidget(scroll)
+
         main_layout.addWidget(content_frame, 1)
 
     def load_cameras(self):
-        # Асинхронне завантаження, щоб не блокувати UI
         QTimer.singleShot(10, self._load_cameras_impl)
 
     def _load_cameras_impl(self):
-        # 1. Отримуємо свіжий список з БД
         db_cameras = self.repo.get_all()
+        existing_ids = {str(w.camera.id) for w in self.widgets}
         
-        # 2. Складаємо список ID камер, які вже є на екрані
-        existing_ids = set()
-        for w in self.widgets:
-            existing_ids.add(str(w.camera.id))
-        
-        # 3. Знаходимо та створюємо ТІЛЬКИ нові віджети
-        new_widgets_count = 0
         for cam in db_cameras:
             if str(cam.id) not in existing_ids:
-                # Створюємо віджет
                 wid = VideoFeedWidget(cam)
                 wid.delete_requested.connect(self.handle_delete_camera)
-                wid.start() # Запускаємо потік
-                
-                # Додаємо у внутрішній список пам'яті
+                wid.start()
                 self.widgets.append(wid)
-                new_widgets_count += 1
         
-        if new_widgets_count == 0 and len(db_cameras) == len(self.widgets):
-            # Якщо нічого не змінилося - виходимо, щоб не смикати сітку
-            return
-
-        # 4. ПЕРЕРАХУНОК ПОЗИЦІЙ (Re-Layout)
-        # Ми беремо ВСІ віджети і заново кажемо сітці, де вони мають стояти.
-        # Qt досить розумний: якщо віджет вже там, він не буде мигати.
-        
-        max_cols = 2  # <--- 2 камери в ряд
-        
-        for index, wid in enumerate(self.widgets):
-            row = index // max_cols
-            col = index % max_cols
-            
-            # Ця команда перемістить віджет, якщо він був не на своєму місці,
-            # або залишить як є, якщо місце правильне.
-            self.video_grid.addWidget(wid, row, col)
-            
-        print(f"Оновлено сітку: {len(self.widgets)} камер. Додано нових: {new_widgets_count}")
+        self._reflow_grid()
 
     def _reflow_grid(self):
-        """Перераховує позиції всіх камер у сітці, щоб прибрати дирки."""
         max_cols = 2
-        
-        # Ми просто проходимось по списку, який у нас залишився
         for index, widget in enumerate(self.widgets):
             row = index // max_cols
             col = index % max_cols
-            
-            # Ця магія Qt: якщо віджет вже є в лейауті, 
-            # addWidget автоматично перемістить його в нову клітинку.
             self.video_grid.addWidget(widget, row, col)
 
     def handle_delete_camera(self, camera):
         reply = QMessageBox.question(
-            self, "Видалення", f"Видалити камеру '{camera.name}'?",
+            self, "Підтвердження", f"Ви впевнені, що хочете видалити камеру\n'{camera.name}'?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
         
         if reply == QMessageBox.StandardButton.Yes:
-            # 1. Знаходимо віджет у списку
-            widget_to_remove = None
-            for w in self.widgets:
-                if w.camera.id == camera.id:
-                    widget_to_remove = w
-                    break
+            widget_to_remove = next((w for w in self.widgets if w.camera.id == camera.id), None)
             
             if widget_to_remove:
-                # 2. Зупиняємо і прибираємо з UI
                 widget_to_remove.stop()
                 self.video_grid.removeWidget(widget_to_remove)
                 widget_to_remove.setParent(None)
-                widget_to_remove.deleteLater() # Плануємо знищення об'єкта
-                
-                # 3. Видаляємо зі списку пам'яті
+                widget_to_remove.deleteLater()
                 self.widgets.remove(widget_to_remove)
-                
-                # 4. ДЕФРАГМЕНТАЦІЯ (Зсуваємо решту камер)
                 self._reflow_grid()
             
-            # 5. Видаляємо з БД (асинхронно)
             worker = DatabaseWorker(self.repo.delete, camera.id)
-            worker.signals.error.connect(lambda e: print(f"Delete Error: {e}"))
             QThreadPool.globalInstance().start(worker)
 
     def open_add_dialog(self):

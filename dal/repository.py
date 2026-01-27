@@ -8,14 +8,12 @@ class CameraRepository:
     def __init__(self):
         self.collection = db.get_collection("cameras")
 
-
     def add(self, camera: Camera) -> str:
         """Додає камеру в базу і повертає її ID"""
-        # exclude={"id"} означає, що ми не пхаємо в базу поле id насильно,MongoBD сама створить _id
+        # exclude={"id"} означає, що ми не пхаємо в базу поле id насильно, MongoDB сама створить _id
         camera_dict = camera.model_dump(by_alias=True, exclude={"id"}) 
         result = self.collection.insert_one(camera_dict)
         return str(result.inserted_id)
-    
 
     def get_all(self) -> List[Camera]:
         """Отримує всі камери з бази"""
@@ -25,8 +23,16 @@ class CameraRepository:
             doc["_id"] = str(doc["_id"])
             cameras.append(Camera(**doc))
         return cameras
-    #Використовувався sqllite, а не mongodb через, що були конфллікти
-    # dal/repository.py
+
+    # 👇 НОВИЙ МЕТОД ДЛЯ ПЕРЕВІРКИ НАЗВИ
+    def get_by_name(self, name: str) -> Optional[Camera]:
+        """Шукає камеру за назвою (для перевірки дублікатів)"""
+        doc = self.collection.find_one({"name": name})
+        if doc:
+            doc["_id"] = str(doc["_id"])
+            return Camera(**doc)
+        return None
+
     def delete(self, camera_id: str):
         """Видалення для MongoDB"""
         try:
