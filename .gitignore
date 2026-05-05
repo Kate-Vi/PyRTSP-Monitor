@@ -1,5 +1,7 @@
+.env
 venv/
 __pycache__/
+*.pyc
 .DS_Store
-.idea/
-config.py
+rtsp_videos/
+*.mp4

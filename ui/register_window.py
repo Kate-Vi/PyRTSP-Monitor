@@ -1,133 +1,83 @@
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QLineEdit, 
-                             QPushButton, QMessageBox, QFormLayout)
-from PyQt6.QtCore import Qt
-from bll.auth_service import AuthService
-
-# Імпортуємо власний компонент поля пароля з кнопкою "показати/сховати"
-from ui.password_edit import PasswordEdit 
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QFrame
+from PyQt6.QtCore import pyqtSignal, Qt
 
 class RegisterWindow(QWidget):
-    """
-    Клас RegisterWindow відповідає за візуальний інтерфейс реєстрації нового користувача.
-    
-    Основні функції:
-    1. Відображення форми для введення персональних даних.
-    2. Первинна валідація наявності даних.
-    3. Взаємодія з BLL (AuthService) для створення облікового запису.
-    """
+    # Сигнал для повернення до вікна входу
+    on_back_click = pyqtSignal()
 
     def __init__(self):
-        """Ініціалізація вікна та сервісу авторизації."""
         super().__init__()
-        self.auth_service = AuthService()
         self.init_ui()
 
     def init_ui(self):
-        """
-        Налаштування графічного інтерфейсу (UI).
-        Встановлює розміри, стилі, створює віджети та компонування (Layouts).
-        """
-        self.setWindowTitle("Реєстрація нового користувача")
-        self.setFixedSize(400, 550)
+        # Головний шар для всього екрана
+        main_layout = QVBoxLayout(self)
         
-        # CSS-стилізація для темної теми оформлення
-        self.setStyleSheet("""
-            QWidget { background-color: #2b2b2b; color: #ffffff; font-family: Arial; }
-            QLineEdit { 
-                padding: 8px; border: 1px solid #555; border-radius: 4px; 
-                background: #3b3b3b; color: white; font-size: 14px;
+        # Створюємо центральний контейнер (картку), щоб інтерфейс не розповзався
+        self.reg_container = QFrame()
+        self.reg_container.setFixedWidth(400) # Обмежуємо ширину для MacBook Air[cite: 2]
+        self.reg_container.setStyleSheet("""
+            QFrame {
+                background-color: #1E1E24;
+                border-radius: 20px;
+                padding: 30px;
             }
-            QLineEdit:placeholder { color: #888; font-style: italic; }
-            QPushButton { 
-                padding: 12px; background-color: #28a745; border: none; 
-                border-radius: 5px; font-weight: bold; font-size: 14px;
+            QLineEdit {
+                background-color: #2A2A35;
+                color: white;
+                border: 1px solid #333;
+                padding: 12px;
+                border-radius: 8px;
             }
-            QPushButton:hover { background-color: #218838; }
-            QLabel { font-size: 14px; font-weight: bold; }
+            QPushButton#btnRegister {
+                background-color: #6C5CE7;
+                color: white;
+                padding: 14px;
+                border-radius: 8px;
+                font-weight: bold;
+            }
         """)
+        
+        reg_layout = QVBoxLayout(self.reg_container)
+        reg_layout.setSpacing(15)
 
-        # Головний вертикальний контейнер
-        layout = QVBoxLayout()
-        layout.setContentsMargins(30, 30, 30, 30)
-
-        # Заголовок вікна
-        title = QLabel("Створення акаунту")
+        title = QLabel("Реєстрація")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("font-size: 22px; margin-bottom: 20px; color: #fff;")
-        layout.addWidget(title)
+        title.setStyleSheet("color: white; font-size: 24px; font-weight: bold; border: none;")
+        reg_layout.addWidget(title)
 
-        # Форма для полів вводу (автоматично вирівнює підписи та поля)
-        form_layout = QFormLayout()
-        form_layout.setSpacing(15)
-        form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        # Додаємо поля введення[cite: 1]
+        self.input_user = QLineEdit()
+        self.input_user.setPlaceholderText("Логін")
+        reg_layout.addWidget(self.input_user)
 
-        # --- Створення полів вводу ---
-        
-        self.inp_lastname = QLineEdit()
-        self.inp_lastname.setPlaceholderText("Вітик")
-        form_layout.addRow("Прізвище:", self.inp_lastname)
+        self.input_email = QLineEdit()
+        self.input_email.setPlaceholderText("Електронна пошта")
+        reg_layout.addWidget(self.input_email)
 
-        self.inp_firstname = QLineEdit()
-        self.inp_firstname.setPlaceholderText("Катерина")
-        form_layout.addRow("Ім'я:", self.inp_firstname)
+        self.input_pass = QLineEdit()
+        self.input_pass.setPlaceholderText("Пароль")
+        self.input_pass.setEchoMode(QLineEdit.EchoMode.Password)
+        reg_layout.addWidget(self.input_pass)
 
-        self.inp_email = QLineEdit()
-        self.inp_email.setPlaceholderText("user@gmail.com")
-        form_layout.addRow("Gmail:", self.inp_email)
+        btn_register = QPushButton("Зареєструватися")
+        btn_register.setObjectName("btnRegister")
+        btn_register.setCursor(Qt.CursorShape.PointingHandCursor)
+        reg_layout.addWidget(btn_register)
 
-        self.inp_username = QLineEdit()
-        self.inp_username.setPlaceholderText("Kateryna_Vityk")
-        form_layout.addRow("Ім'я користувача:", self.inp_username)
+        # Кнопка повернення[cite: 2]
+        btn_back = QPushButton("Вже є акаунт? Увійти")
+        btn_back.setFlat(True)
+        btn_back.setStyleSheet("color: #A0A0B0; border: none; margin-top: 10px;")
+        btn_back.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_back.clicked.connect(self.on_back_click.emit)
+        reg_layout.addWidget(btn_back)
 
-        # Використовуємо кастомний віджет для пароля
-        self.inp_password = PasswordEdit() 
-        form_layout.addRow("Пароль:", self.inp_password)
-
-        # Додаємо форму в головний лейаут
-        layout.addLayout(form_layout)
-        layout.addSpacing(25)
-
-        # Кнопка підтвердження реєстрації
-        btn_save = QPushButton("Зареєструватися")
-        btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_save.clicked.connect(self.save_user)
-        layout.addWidget(btn_save)
-
-        self.setLayout(layout)
-
-    def save_user(self):
-        """
-        Обробляє натискання кнопки 'Зареєструватися'.
-        
-        Алгоритм:
-        1. Зчитує дані з усіх полів.
-        2. Перевіряє, чи всі поля заповнені.
-        3. Викликає метод register() у сервісі auth_service.
-        4. Обробляє успіх або помилки (ValueError, Exception).
-        """
-        # 1. Збір даних (strip() видаляє зайві пробіли на початку і в кінці)
-        last_name = self.inp_lastname.text().strip()
-        first_name = self.inp_firstname.text().strip()
-        email = self.inp_email.text().strip()
-        username = self.inp_username.text().strip()
-        password = self.inp_password.text()
-
-        # 2. Перевірка на пусті поля
-        if not all([last_name, first_name, email, username, password]):
-            QMessageBox.warning(self, "Помилка", "Всі поля є обов'язковими!")
-            return
-
-        try:
-            # 3. Спроба реєстрації через BLL
-            self.auth_service.register(username, password, email, first_name, last_name)
-            
-            # Успіх
-            QMessageBox.information(self, "Успіх", "Акаунт успішно створено!")
-            self.close() # Закриваємо вікно після успішної реєстрації
-            
-        except ValueError as e:
-            # Помилки валідації (неправильна пошта, слабкий пароль, зайнятий логін)
-            QMessageBox.warning(self, "Помилка валідації", str(e))
-        except Exception as e:
-            # Критичні помилки (наприклад, база даних недоступна)
-            QMessageBox.critical(self, "Критична помилка", f"Щось пішло не так: {e}")
+        # Центруємо картку реєстрації посередині вікна[cite: 2]
+        main_layout.addStretch()
+        h_center = QHBoxLayout()
+        h_center.addStretch()
+        h_center.addWidget(self.reg_container)
+        h_center.addStretch()
+        main_layout.addLayout(h_center)
+        main_layout.addStretch()

@@ -1,155 +1,100 @@
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QLineEdit, 
-                             QPushButton, QMessageBox)
-from PyQt6.QtCore import Qt, pyqtSignal
-
-# Імпорти бізнес-логіки та допоміжних вікон
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QFrame, QMessageBox
+from PyQt6.QtCore import pyqtSignal, Qt
 from bll.auth_service import AuthService
-from ui.register_window import RegisterWindow 
-from ui.restore_window import RestoreWindow
 from ui.password_edit import PasswordEdit
 
 class LoginWindow(QWidget):
-    """
-    Головне вікно входу в систему.
-    
-    Відповідає за:
-    1. Аутентифікацію користувача (введення логіна/пароля).
-    2. Навігацію до інших вікон (Реєстрація, Відновлення пароля).
-    3. Сповіщення головного модуля програми про успішний вхід (через сигнали).
-    """
-
-    # Сигнал (Event), який надсилається при успішному вході.
-    # Передає рядок (str) з іменем користувача.
-    login_successful = pyqtSignal(str) 
+    # Сигнали для перемикання екранів у main.py
+    on_register_click = pyqtSignal()
+    on_restore_click = pyqtSignal()
+    on_login_success = pyqtSignal(str) # Передає ім'я користувача
 
     def __init__(self):
-        """Ініціалізація вікна та сервісів."""
         super().__init__()
-        self.auth_service = AuthService()
-        
-        # Змінні для зберігання посилань на дочірні вікна.
-        # Це необхідно, щоб Python не видалив вікно з пам'яті (Garbage Collection)
-        # одразу після його відкриття.
-        self.register_window = None
-        self.restore_window = None
-        
+        self.auth_service = AuthService() # Сервіс для перевірки паролів[cite: 1]
         self.init_ui()
 
     def init_ui(self):
-        """
-        Налаштування графічного інтерфейсу.
-        Встановлює розміри, стилі (CSS), створює віджети та розміщує їх на формі.
-        """
-        self.setWindowTitle("RTSP Security System - Вхід")
-        self.setFixedSize(400, 400) 
+        # Головний шар, що центрує все вікно
+        main_layout = QVBoxLayout(self)
         
-        # Налаштування стилів (CSS) для темної теми
-        self.setStyleSheet("""
-            QWidget { background-color: #2b2b2b; color: #ffffff; font-family: Arial; }
-            QLineEdit { 
-                padding: 10px; 
-                border: 1px solid #555; 
-                border-radius: 5px; 
-                background: #3b3b3b; 
-                color: white; 
+        # Центральна картка форми (обмежена ширина 400px)[cite: 2]
+        self.form_container = QFrame()
+        self.form_container.setFixedWidth(400)
+        self.form_container.setStyleSheet("""
+            QFrame {
+                background-color: #1E1E24;
+                border-radius: 20px;
+                padding: 30px;
             }
-            QPushButton { 
-                padding: 12px; 
-                border: none; 
-                border-radius: 5px; 
-                font-weight: bold; 
+            QLineEdit {
+                background-color: #2A2A35;
+                color: white;
+                border: 1px solid #333;
+                padding: 12px;
+                border-radius: 8px;
             }
-            /* Стиль для основної кнопки дії (синя) */
-            QPushButton#btnLogin { background-color: #0d6efd; }
-            QPushButton#btnLogin:hover { background-color: #0b5ed7; }
-            
-            /* Стиль для другорядної кнопки (темно-сіра) */
-            QPushButton#btnRegister { background-color: #444; color: #ccc; }
-            QPushButton#btnRegister:hover { background-color: #555; }
+            QPushButton#btnLogin {
+                background-color: #6C5CE7;
+                color: white;
+                padding: 14px;
+                border-radius: 8px;
+                font-weight: bold;
+            }
+            QPushButton#btnLogin:hover { background-color: #5D4AD1; }
         """)
 
-        # Вертикальне компонування елементів
-        layout = QVBoxLayout()
-        layout.setContentsMargins(40, 40, 40, 40)
-        layout.setSpacing(15)
+        form_layout = QVBoxLayout(self.form_container)
+        form_layout.setSpacing(20)
 
-        # 1. Заголовок
         title = QLabel("Вхід у систему")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("font-size: 24px; font-weight: bold; margin-bottom: 10px;")
-        layout.addWidget(title)
+        title.setStyleSheet("color: white; font-size: 24px; font-weight: bold; border: none;")
+        form_layout.addWidget(title)
 
-        # 2. Поле Логін
         self.input_user = QLineEdit()
         self.input_user.setPlaceholderText("Логін")
-        layout.addWidget(self.input_user)
+        form_layout.addWidget(self.input_user)
 
-        # 3. Поле Пароль (кастомний віджет з кнопкою "Око")
-        self.input_pass = PasswordEdit() 
+        self.input_pass = PasswordEdit() # Ваш віджет з "оком"
         self.input_pass.setPlaceholderText("Пароль")
-        layout.addWidget(self.input_pass)
+        form_layout.addWidget(self.input_pass)
 
-        # 4. Кнопка "Увійти"
         btn_login = QPushButton("Увійти")
-        btn_login.setObjectName("btnLogin") # Встановлюємо ID для CSS селектора
+        btn_login.setObjectName("btnLogin")
         btn_login.setCursor(Qt.CursorShape.PointingHandCursor)
+        # ОСЬ ТУТ МИ ПІДКЛЮЧАЄМО МЕТОД[cite: 2]
         btn_login.clicked.connect(self.handle_login)
-        layout.addWidget(btn_login)
+        form_layout.addWidget(btn_login)
 
-        # 5. Кнопка "Забули пароль?" (стилізована під гіперпосилання)
-        btn_forgot = QPushButton("Забули пароль?")
-        btn_forgot.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_forgot.setStyleSheet("""
-            background: transparent; 
-            color: #888; 
-            font-size: 12px; 
-            text-align: center;
-        """)
-        btn_forgot.clicked.connect(self.open_restore_window)
-        layout.addWidget(btn_forgot)
+        btn_reg = QPushButton("Створити акаунт")
+        btn_reg.setFlat(True)
+        btn_reg.setStyleSheet("color: #A0A0B0; border: none;")
+        btn_reg.clicked.connect(self.on_register_click.emit)
+        form_layout.addWidget(btn_reg)
 
-        # Відступ перед кнопкою реєстрації
-        layout.addSpacing(5)
+        # Центрування картки посеред екрана[cite: 2]
+        main_layout.addStretch()
+        h_row = QHBoxLayout()
+        h_row.addStretch()
+        h_row.addWidget(self.form_container)
+        h_row.addStretch()
+        main_layout.addLayout(h_row)
+        main_layout.addStretch()
 
-        # 6. Кнопка "Реєстрація"
-        btn_register = QPushButton("Створити новий акаунт")
-        btn_register.setObjectName("btnRegister")
-        btn_register.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_register.clicked.connect(self.open_register_window)
-        layout.addWidget(btn_register)
-
-        self.setLayout(layout)
-
+    # ВАЖЛИВО: Цей метод обов'язково має бути всередині класу[cite: 2]
     def handle_login(self):
-        """
-        Обробляє спробу входу користувача.
+        """Обробка натискання кнопки входу[cite: 2]."""
+        username = self.input_user.text().strip()
+        password = self.input_pass.text().strip()
         
-        Алгоритм:
-        1. Зчитує введені дані.
-        2. Перевіряє на пустоту.
-        3. Звертається до AuthService для перевірки пароля (хешування та звірка з БД).
-        4. Якщо успішно -> емулює сигнал login_successful.
-        5. Якщо помилка -> показує спливаюче вікно.
-        """
-        username = self.input_user.text()
-        password = self.input_pass.text()
-
         if not username or not password:
-            QMessageBox.warning(self, "Помилка", "Введіть логін та пароль!")
+            QMessageBox.warning(self, "Помилка", "Будь ласка, заповніть усі поля")
             return
 
+        # Перевірка через AuthService[cite: 1]
         if self.auth_service.login(username, password):
-            # Вхід успішний: повідомляємо main.py, щоб відкрив головне вікно
-            self.login_successful.emit(username)
+            print(f"[*] Успішний вхід: {username}")
+            self.on_login_success.emit(username) # Надсилаємо сигнал у main.py[cite: 2]
         else:
-            QMessageBox.critical(self, "Помилка", "Невірний логін або пароль")
-
-    def open_register_window(self):
-        """Створює та відкриває модальне вікно реєстрації."""
-        self.register_window = RegisterWindow()
-        self.register_window.show()
-
-    def open_restore_window(self):
-        """Створює та відкриває модальне вікно відновлення пароля."""
-        self.restore_window = RestoreWindow()
-        self.restore_window.show()
+            QMessageBox.warning(self, "Помилка", "Невірний логін або пароль")

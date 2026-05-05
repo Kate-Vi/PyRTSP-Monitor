@@ -1,132 +1,124 @@
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QLabel, QLineEdit, 
-                             QPushButton, QHBoxLayout, QMessageBox)
-from PyQt6.QtCore import Qt, QTimer, QRunnable, QThreadPool, QObject, pyqtSignal
-from dal.repository import CameraRepository
+from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
+                             QLineEdit, QPushButton, QMessageBox)
+from PyQt6.QtCore import Qt
 from dal.models import Camera
-
-
-class WorkerSignals(QObject):
-    """
-    QRunnable не може мати сигналів, тому ми створюємо для них окремий клас-обгортку.
-    """
-    finished = pyqtSignal(object)
-    error = pyqtSignal(str)
-
-class DatabaseWorker(QRunnable):
-    """Асинхронний робітник для операцій з БД"""
-    
-    def __init__(self, func, *args, **kwargs):
-        super().__init__()
-        self.func = func
-        self.args = args
-        self.kwargs = kwargs
-        self.signals = WorkerSignals()
-    
-    def run(self):
-        try:
-            result = self.func(*self.args, **self.kwargs)
-            self.signals.finished.emit(result)
-        except Exception as e:
-            self.signals.error.emit(str(e))
 
 class AddCameraDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.repo = CameraRepository()
+        self.setWindowTitle("Додати нову камеру")
+        self.setFixedSize(400, 350)
         self.init_ui()
 
     def init_ui(self):
-        self.setWindowTitle("Додати камеру")
-        self.setFixedSize(400, 250)
-        
+        # Стилізація під темну тему вашого MacBook Air
         self.setStyleSheet("""
-            QDialog { background-color: #161B22; color: white; }
-            QLabel { font-size: 14px; color: #C9D1D9; font-weight: bold; }
-            QLineEdit { 
-                padding: 8px; background-color: #0D1117; 
-                border: 1px solid #30363D; border-radius: 6px; color: white;
+            QDialog {
+                background-color: #121215;
             }
-            QPushButton {
-                padding: 10px; border-radius: 6px; font-weight: bold;
+            QLabel {
+                color: #A0A0B0;
+                font-size: 14px;
+                font-weight: bold;
             }
-            QPushButton#btnSave { background-color: #238636; color: white; border: none; }
-            QPushButton#btnSave:hover { background-color: #2ea043; }
-            QPushButton#btnCancel { background-color: #21262D; color: #C9D1D9; border: 1px solid #30363D; }
+            QLineEdit {
+                background-color: #1E1E24;
+                color: white;
+                border: 1px solid #333;
+                padding: 12px;
+                border-radius: 8px;
+            }
+            QLineEdit:focus {
+                border: 1px solid #6C5CE7;
+            }
+            QPushButton#btnSave {
+                background-color: #6C5CE7;
+                color: white;
+                padding: 12px;
+                border-radius: 8px;
+                font-weight: bold;
+            }
+            QPushButton#btnCancel {
+                background-color: transparent;
+                color: #888;
+                border: 1px solid #444;
+                padding: 12px;
+                border-radius: 8px;
+            }
         """)
 
-        layout = QVBoxLayout()
+        layout = QVBoxLayout(self)
         layout.setSpacing(15)
         layout.setContentsMargins(30, 30, 30, 30)
 
-        layout.addWidget(QLabel("Назва камери:"))
+        title = QLabel("Нова камера")
+        title.setStyleSheet("color: white; font-size: 20px; margin-bottom: 10px;")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+
+        # Поле для назви
+        layout.addWidget(QLabel("Назва камери"))
         self.inp_name = QLineEdit()
-        self.inp_name.setPlaceholderText("Наприклад: Головний вхід")
+        self.inp_name.setPlaceholderText("Наприклад: телефон")
         layout.addWidget(self.inp_name)
 
-        layout.addWidget(QLabel("RTSP посилання:"))
-        self.inp_rtsp = QLineEdit()
-        self.inp_rtsp.setPlaceholderText("rtsp://admin:12345@192.168.1.10...")
-        layout.addWidget(self.inp_rtsp)
+        # Поле для посилання
+        layout.addWidget(QLabel("RTSP URL або назва пристрою"))
+        self.inp_url = QLineEdit()
+        self.inp_url.setPlaceholderText("rtsp://...")
+        layout.addWidget(self.inp_url)
 
-        btn_layout = QHBoxLayout()
-        btn_cancel = QPushButton("Скасувати")
-        btn_cancel.setObjectName("btnCancel")
-        btn_cancel.clicked.connect(self.reject)
+        layout.addStretch()
+
+        # Кнопки
+        buttons_layout = QHBoxLayout()
         
-        btn_save = QPushButton("Зберегти")
-        btn_save.setObjectName("btnSave")
-        btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_save.clicked.connect(self.save_camera)
+        self.btn_cancel = QPushButton("Скасувати")
+        self.btn_cancel.setObjectName("btnCancel")
+        self.btn_cancel.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_cancel.clicked.connect(self.reject)
+        
+        self.btn_save = QPushButton("Зберегти")
+        self.btn_save.setObjectName("btnSave")
+        self.btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_save.clicked.connect(self.handle_accept)
+        
+        buttons_layout.addWidget(self.btn_cancel)
+        buttons_layout.addWidget(self.btn_save)
+        layout.addLayout(buttons_layout)
 
-        btn_layout.addWidget(btn_cancel)
-        btn_layout.addWidget(btn_save)
-        layout.addLayout(btn_layout)
-
-        self.setLayout(layout)
-
-    def save_camera(self):
+    def handle_accept(self):
+        """Валідація та збереження камери з урахуванням поля rtsp_url."""
         name = self.inp_name.text().strip()
-        rtsp = self.inp_rtsp.text().strip()
+        url = self.inp_url.text().strip()
 
-        if not name or not rtsp:
-            QMessageBox.warning(self, "Помилка", "Будь ласка, заповніть всі поля!")
+        if not name or not url:
+            QMessageBox.warning(self, "Помилка", "Будь ласка, заповніть усі поля")
             return
 
-        # 👇 ПЕРЕВІРКА НА ДУБЛІКАТИ
-        # Перевіряємо синхронно, бо читання одного запису дуже швидке
-        if self.repo.get_by_name(name):
-            QMessageBox.warning(self, "Дублікат", f"Камера з назвою '{name}' вже існує!\nОберіть іншу назву.")
-            return
-
-        self.setEnabled(False)
-        
         try:
-            new_cam = Camera(name=name, rtsp_url=rtsp)
+            # Перевірка унікальності в репозиторії
+            existing_cameras = self.parent().repo.get_all()
+            for cam in existing_cameras:
+                if cam.name.lower() == name.lower():
+                    QMessageBox.warning(self, "Помилка", f"Назва '{name}' вже існує")
+                    return
+                if cam.rtsp_url == url:
+                    QMessageBox.warning(self, "Помилка", "Це посилання вже використовується")
+                    return
+            
+            # Створення об'єкта (ВАЖЛИВО: rtsp_url має відповідати вашій моделі)
+            new_camera = Camera(
+                name=name, 
+                rtsp_url=url, 
+                protocol="tcp"
+            )
+            
+            # Додавання в базу даних
+            self.parent().repo.add(new_camera)
+            
+            print(f"✅ Камеру '{name}' додано успішно!")
+            self.accept() 
+            
         except Exception as e:
-            QMessageBox.critical(self, "Валідація", str(e))
-            self.setEnabled(True)
-            return
-            
-        self._start_worker(new_cam)
-
-    def _start_worker(self, new_cam):
-            # 1. Створюємо воркера.
-            worker = DatabaseWorker(self.repo.add, new_cam)
-            
-            # 2. Підключаємо слоти (вони виконаються в Main Thread)
-            worker.signals.finished.connect(self._on_camera_added)
-            worker.signals.error.connect(self._on_camera_add_error)
-            
-            # 3. Стартуємо
-            QThreadPool.globalInstance().start(worker)
-
-    def _on_camera_added(self, result):
-        """Успішне додавання камери"""
-        print(f"✅ Камеру успішно додано в БД!")
-        self.accept()
-
-    def _on_camera_add_error(self, error):
-        """Помилка при додаванні камери"""
-        print(f"❌ Помилка збереження: {error}")
-        QMessageBox.critical(self, "Помилка бази даних", f"Не вдалося зберегти камеру:\n{error}")
-        self.setEnabled(True)
+            QMessageBox.critical(self, "Помилка", f"Не вдалося зберегти: {e}")
